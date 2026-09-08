@@ -1,0 +1,64 @@
+# TutorBot · 04 Alerta de Disponibilidad Critica
+
+Flujo de trabajo automatizado para n8n que evalua periodicamente la carga de agenda de los tutores activos y notifica por correo electronico a la coordinacion academica cuando la disponibilidad de cupos alcanza niveles criticos o se agota por completo.
+
+---
+
+## Descripcion General
+
+El flujo se ejecuta de forma programada cada hora. Analiza la oferta de cupos (bloques habilitados en la hoja `DISPONIBILIDAD`) versus las reservas activas (estados `ASIGNADA` o `CONFIRMADA` en `TUTORIAS`) dentro de una ventana de tiempo configurable (por defecto, 14 dias). 
+
+Si los bloques libres de un tutor caen por debajo del umbral minimo configurado, el sistema genera un correo consolidado hacia la coordinacion y registra el evento en la base de datos para evitar correos duplicados en el mismo dia.
+
+---
+
+## Reglas de Negocio e Idempotencia
+
+* **Frecuencia de Ejecucion:** Se activa automaticamente en el minuto 20 de cada hora para no solaparse con otros workflows del sistema.
+* **Ventana de Evaluacion:** Analiza la disponibilidad desde el dia actual hasta 14 dias hacia el futuro.
+* **Umbrales de Alerta:**
+  * **`CRITICO`:** Al tutor le quedan entre 1 y 2 bloques libres.
+  * **`SIN_CUPO`:** Al tutor no le queda ningun bloque libre en el periodo.
+* **Analisis de Impacto (Materias Expuestas):** Identifica si el tutor saturado es el unico que imparte ciertas asignaturas, alertando a la coordinacion sobre posibles demandas sin cobertura.
+* **Mecanismo de Idempotencia:** Consulta la tabla `LOG_EVENTOS` antes de alertar. Si ya existe una entrada `alerta_disponibilidad` registrada hoy para el tutor en cuestion, omite el envio para evitar spam.
+
+---
+
+## Estructura de Nodos
+
+| Nodo | Tipo | Descripcion |
+| :--- | :--- | :--- |
+| **Cada hora** | `n8n-nodes-base.scheduleTrigger` | Disparador programado (ejecucion horaria al minuto 20). |
+| **Config** | `n8n-nodes-base.set` | Define variables globales (`SHEET_ID`, `EMAIL_COORDINACION`, `VENTANA_ALERTA_DIAS`, `UMBRAL_BLOQUES_LIBRES`). |
+| **Leer TUTORES** | `n8n-nodes-base.googleSheets` | Lee el listado de tutores y filtra solo los activos. |
+| **Leer DISPONIBILIDAD** | `n8n-nodes-base.googleSheets` | Carga las franjas horarias y dias de atencion configurados. |
+| **Leer TUTORIAS** | `n8n-nodes-base.googleSheets` | Recupera las tutorias agendadas previamente. |
+| **Leer LOG_EVENTOS** | `n8n-nodes-base.googleSheets` | Consulta el historial de alertas emitidas en el dia. |
+| **Evaluar disponibilidad** | `n8n-nodes-base.code` (JS) | Calcula capacidad, bloques libres, ocupacion %, verifica idempotencia y redacta la alerta. |
+| **Avisar a coordinacion** | `n8n-nodes-base.gmail` | Envia el informe por correo a la direccion configurada. |
+| **Registrar alerta** | `n8n-nodes-base.googleSheets` | Guarda la marca de auditoria en `LOG_EVENTOS` para garantizar la idempotencia. |
+
+---
+
+## Estructura del Registro en `LOG_EVENTOS`
+
+Cada notificacion confirmada genera una fila en la hoja `LOG_EVENTOS` con el siguiente formato:
+
+* **`id_evento`:** `EV-YYYYMMDDHHMMSS-{id_tutor}`
+* **`timestamp`:** Fecha y hora en formato ISO (`America/Bogota`)
+* **`telegram_user`:** `sistema`
+* **`evento`:** `alerta_disponibilidad`
+* **`entidad`:** `tutor`
+* **`id_entidad`:** `{id_tutor}`
+* **`detalle`:** Ej. `CRITICO | libres 1/10 | ocupacion 90%`
+
+---
+
+## Requisitos de Despliegue y Configuracion
+
+1. **Credenciales de Google Sheets:** Vincular OAuth2 con acceso a la hoja de calculo de la base de datos `TutorBot_DB`.
+2. **Credenciales de Gmail:** Configurar la cuenta emisora autorizada para el envio de correos.
+3. **Nodo Config:** Ajustar las siguientes variables antes de activar en produccion:
+   * **`SHEET_ID`:** ID de la hoja de calculo de Google Sheets.
+   * **`EMAIL_COORDINACION`:** Correo donde llegaran las alertas.
+   * **`TIMEZONE`:** `America/Bogota`.

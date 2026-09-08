@@ -1,0 +1,770 @@
+{
+  "name": "TutorBot · 03 Reporte de coordinacion",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "id": "15efa32c-abaa-43f8-868d-ec63264b9b61",
+      "name": "Lunes 7:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -192,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "572a6af0-4edb-4fd0-afb9-9083fccc35d3",
+              "name": "SHEET_ID",
+              "value": "1o1an_Z9rB1FR-y_JBsJPa_jpmgKbwAW-j1nVO0BEZ_w",
+              "type": "string"
+            },
+            {
+              "id": "c8483fbe-11eb-43af-981e-b25b229e8950",
+              "name": "TIMEZONE",
+              "value": "America/Bogota",
+              "type": "string"
+            },
+            {
+              "id": "35540865-1917-46e8-aea5-d96fd313c521",
+              "name": "VENTANA_REPORTE_DIAS",
+              "value": 7,
+              "type": "number"
+            },
+            {
+              "id": "fc1823b2-991a-4060-9436-dfa1f16f9832",
+              "name": "EMAIL_COORDINACION",
+              "value": "villamizarfajardoz@gmail.com",
+              "type": "string"
+            },
+            {
+              "id": "ddcdfd25-d486-457a-b47b-86f4db71021a",
+              "name": "MODO_IA",
+              "value": "on",
+              "type": "string"
+            },
+            {
+              "id": "0b1e5ce8-5814-418f-ac7f-7bfd74b35b5e",
+              "name": "IA_MODELO",
+              "value": "models/gemini-3.5-flash-lite",
+              "type": "string"
+            },
+            {
+              "id": "c45b5ad1-2f59-4e8f-9081-548bf3b0deda",
+              "name": "ahora_iso",
+              "value": "={{ $now.setZone('America/Bogota').toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "b123bc89-ee54-4d49-b82c-d2cfa8c7bfcf",
+              "name": "hoy",
+              "value": "={{ $now.setZone('America/Bogota').toFormat('yyyy-MM-dd') }}",
+              "type": "string"
+            },
+            {
+              "id": "5bc2f7c4-510a-4841-8af0-c2345faf9581",
+              "name": "hora_actual",
+              "value": "={{ $now.setZone('America/Bogota').toFormat('HH:mm') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "49f6d7a6-efb0-4ec7-bd52-57678bd255c2",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        32,
+        224
+      ],
+      "notes": "Unico lugar donde se cambian el ID del Sheet, la zona horaria y las reglas de negocio parametrizables."
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.SHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "TUTORIAS",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "0fb74e2d-7034-4a4b-91b5-c6d13445ba6b",
+      "name": "Leer TUTORIAS",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        256,
+        224
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "3BiTiKAj6eaBM7Ck",
+          "name": "Google Sheets account"
+        }
+      },
+      "notes": "Lee toda la hoja TUTORIAS. alwaysOutputData evita que una hoja vacia detenga el flujo."
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.SHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "TUTORES",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "0eeabffc-a5ae-460f-871f-de46a1713296",
+      "name": "Leer TUTORES",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        464,
+        224
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "notes": "Lee toda la hoja TUTORES. alwaysOutputData evita que una hoja vacia detenga el flujo."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// TutorBot · Calcular indicadores para coordinacion academica\n// Todos los numeros salen de TUTORIAS: cada indicador es rastreable\n// hasta filas concretas de la hoja (requisito de trazabilidad).\n// Ventana: ultimos VENTANA_DIAS dias segun fecha_solicitud.\n// ============================================================\nconst cfg = $('Config').first().json;\nconst VENTANA = Number(cfg.VENTANA_REPORTE_DIAS || 7);\n\nconst aDias = f => { const p = String(f).split('-').map(Number); return Date.UTC(p[0], p[1] - 1, p[2]) / 86400000; };\nconst aFecha = d => new Date(d * 86400000).toISOString().slice(0, 10);\n\nfunction filas(nodo) {\n  try { return $(nodo).all().map(i => i.json).filter(r => r && Object.keys(r).length > 0); }\n  catch (e) { return []; }\n}\nconst tutorias = filas('Leer TUTORIAS').filter(t => String(t.id_tutoria || '') !== '');\nconst tutores  = filas('Leer TUTORES').filter(t => String(t.id_tutor || '') !== '');\n\n// ------------------------------------------------------------\n// Periodo: lo pide el formulario, o por defecto los ultimos VENTANA dias.\n// El nodo del formulario no existe cuando dispara el reloj, asi que la\n// lectura va protegida. Toda fecha recibida se valida: nada entra crudo.\n// ------------------------------------------------------------\nfunction fechaValida(v) {\n  let f = String(v == null ? '' : v).trim();\n  // Se acepta AAAA-MM-DD o un ISO completo. Nada mas: recortar los 10 primeros\n  // caracteres dejaria pasar cualquier basura pegada detras de una fecha valida.\n  const iso = /^(\\d{4}-\\d{2}-\\d{2})T[0-9:.]+(?:Z|[+-]\\d{2}:?\\d{2})?$/.exec(f);\n  if (iso) f = iso[1];\n  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(f)) return '';\n  const p = f.split('-').map(Number);\n  const d = new Date(Date.UTC(p[0], p[1] - 1, p[2]));\n  const real = d.getUTCFullYear() === p[0] && d.getUTCMonth() === p[1] - 1 && d.getUTCDate() === p[2];\n  return real ? f : '';\n}\n\n// Tres disparadores posibles. Solo uno se ejecuta por corrida, asi que las\n// lecturas de los otros dos lanzan error y se capturan.\nfunction nodo(nombre) {\n  try { return $(nombre).first().json || null; } catch (e) { return null; }\n}\nconst formulario = nodo('Solicitud de reporte');\nconst web = formulario ? null : nodo('Webhook reporte a demanda');\n\nlet origen = 'programado';\nlet pedido = { desde: '', hasta: '' };\n\nif (formulario) {\n  origen = 'formulario';\n  pedido = { desde: formulario['Desde'], hasta: formulario['Hasta'] };\n} else if (web) {\n  origen = 'webhook';\n  const q = (web.query || web.body || {});\n  pedido = { desde: q.desde, hasta: q.hasta };\n}\n\nconst porDefecto = { desde: aFecha(aDias(cfg.hoy) - VENTANA), hasta: cfg.hoy };\nlet desde = porDefecto.desde;\nlet hasta = porDefecto.hasta;\nlet aviso = '';\n\nconst pidioAlgo = String(pedido.desde || '').trim() !== '' || String(pedido.hasta || '').trim() !== '';\n\nif (origen !== 'programado' && pidioAlgo) {\n  let d = fechaValida(pedido.desde);\n  let h = fechaValida(pedido.hasta);\n\n  if (!d || !h) {\n    aviso = 'Alguna fecha recibida no era valida (formato AAAA-MM-DD); se usaron los ultimos ' + VENTANA + ' dias.';\n  } else {\n    if (d > h) { const tmp = d; d = h; h = tmp; aviso = 'Las fechas venian invertidas; se corrigio el orden.'; }\n    if (aDias(h) - aDias(d) > 366) {\n      h = aFecha(aDias(d) + 366);\n      aviso = 'El rango superaba un ano; se recorto a 366 dias.';\n    }\n    desde = d;\n    hasta = h;\n  }\n}\nconst enVentana = tutorias.filter(t => {\n  const ref = String(t.fecha_solicitud || '').slice(0, 10) || String(t.fecha || '');\n  return ref >= desde && ref <= hasta;\n});\n\nconst cuenta = est => enVentana.filter(t => String(t.estado || '').toUpperCase() === est).length;\nconst total = enVentana.length;\nconst solicitadas   = cuenta('SOLICITADA');\nconst asignadas     = cuenta('ASIGNADA');\nconst confirmadas   = cuenta('CONFIRMADA');\nconst finalizadas   = cuenta('FINALIZADA');\nconst canceladas    = cuenta('CANCELADA');\nconst sinCobertura  = cuenta('SIN_DISPONIBILIDAD');\n\nconst conTutor = asignadas + confirmadas + finalizadas;\nconst denom = conTutor + sinCobertura;\nconst cobertura = denom > 0 ? Math.round((conTutor / denom) * 1000) / 10 : 0;\n\n// Demanda no cubierta por materia (lo que la coordinacion necesita para contratar)\nconst sinCubrir = {};\nenVentana.filter(t => String(t.estado || '').toUpperCase() === 'SIN_DISPONIBILIDAD')\n  .forEach(t => {\n    const k = (t.materia || 'sin materia') + ' · ' + (t.motivo || 'sin motivo');\n    sinCubrir[k] = (sinCubrir[k] || 0) + 1;\n  });\nconst topSinCubrir = Object.entries(sinCubrir).sort((a, b) => b[1] - a[1]).slice(0, 5);\n\n// Carga por tutor (solo estados que consumen agenda)\nconst carga = {};\nenVentana.filter(t => ['ASIGNADA', 'CONFIRMADA', 'FINALIZADA'].includes(String(t.estado || '').toUpperCase()))\n  .forEach(t => {\n    const k = t.nombre_tutor || t.id_tutor || 'sin tutor';\n    carga[k] = (carga[k] || 0) + 1;\n  });\nconst topCarga = Object.entries(carga).sort((a, b) => b[1] - a[1]).slice(0, 8);\n\nconst activos = tutores.filter(t => String(t.estado || '').toLowerCase() === 'activo').length;\nconst sinActividad = tutores\n  .filter(t => String(t.estado || '').toLowerCase() === 'activo' && !carga[t.nombre] && !carga[t.id_tutor])\n  .map(t => t.nombre).slice(0, 8);\n\nconst proximas = tutorias.filter(t =>\n  ['ASIGNADA', 'CONFIRMADA'].includes(String(t.estado || '').toUpperCase()) &&\n  String(t.fecha) >= cfg.hoy\n).length;\n\nlet mensaje = [\n  'REPORTE TUTORBOT · ' + desde + ' a ' + hasta,\n  '',\n  'Solicitudes registradas: ' + total,\n  '  SOLICITADA (sin cerrar): ' + solicitadas,\n  '  ASIGNADA: ' + asignadas,\n  '  CONFIRMADA: ' + confirmadas,\n  '  FINALIZADA: ' + finalizadas,\n  '  CANCELADA: ' + canceladas,\n  '  SIN_DISPONIBILIDAD: ' + sinCobertura,\n  '',\n  'Cobertura de la demanda: ' + cobertura + '%',\n  '  (' + conTutor + ' con tutor de ' + denom + ' solicitudes resueltas)',\n  'Tutorias vigentes a futuro: ' + proximas,\n  'Tutores activos: ' + activos,\n  '',\n  'Demanda NO cubierta:',\n  topSinCubrir.length ? topSinCubrir.map(e => '  ' + e[1] + 'x ' + e[0]).join('\\n') : '  ninguna en el periodo',\n  '',\n  'Carga por tutor:',\n  topCarga.length ? topCarga.map(e => '  ' + e[0] + ': ' + e[1]).join('\\n') : '  sin actividad',\n  '',\n  sinActividad.length ? 'Tutores activos sin tutorias: ' + sinActividad.join(', ') : 'Todos los tutores activos tuvieron actividad.',\n  '',\n  'Fuente: hoja TUTORIAS del libro TutorBot_DB. Cada cifra se puede reconstruir filtrando por estado y fecha_solicitud.'\n].join('\\n');\n\n// ------------------------------------------------------------\n// Prompt para el analisis cualitativo (workflow 03)\n// El modelo REDACTA sobre cifras ya calculadas. No calcula nada.\n// La lista blanca de cifras se usa despues para verificar que no invento datos.\n// ------------------------------------------------------------\nconst cifras = [total, solicitadas, asignadas, confirmadas, finalizadas, canceladas,\n                sinCobertura, cobertura, conTutor, denom, proximas, activos]\n  .map(Number).filter(v => !isNaN(v));\n\nconst prompt_ia = [\n  'Eres analista de la coordinacion academica de una universidad.',\n  'Con las cifras de abajo escribe un analisis breve para el equipo de coordinacion.',\n  '',\n  'REGLAS ESTRICTAS:',\n  '- Usa UNICAMENTE las cifras entregadas. No calcules, no estimes, no redondees, no inventes numeros.',\n  '- No menciones tutores ni materias que no aparezcan en los datos.',\n  '- No propongas acciones que impliquen agendar, cancelar o reasignar tutorias.',\n  '- Maximo 6 lineas. Sin encabezados, sin vinetas con simbolos raros, sin markdown.',\n  '- Escribe en espanol neutro, tono profesional y directo.',\n  '',\n  'DATOS DEL PERIODO ' + desde + ' a ' + hasta + ':',\n  '- Solicitudes registradas: ' + total,\n  '- Sin cerrar (SOLICITADA): ' + solicitadas,\n  '- Asignadas: ' + asignadas + ', confirmadas: ' + confirmadas + ', finalizadas: ' + finalizadas,\n  '- Canceladas: ' + canceladas + ', sin disponibilidad: ' + sinCobertura,\n  '- Cobertura de la demanda: ' + cobertura + '% (' + conTutor + ' de ' + denom + ')',\n  '- Tutorias vigentes a futuro: ' + proximas,\n  '- Tutores activos: ' + activos,\n  '- Demanda no cubierta: ' + (topSinCubrir.length ? topSinCubrir.map(e => e[1] + ' de ' + e[0]).join(', ') : 'ninguna'),\n  '- Carga por tutor: ' + (topCarga.length ? topCarga.map(e => e[0] + ' ' + e[1]).join(', ') : 'sin actividad'),\n  '- Tutores activos sin actividad: ' + (sinActividad.length ? sinActividad.join(', ') : 'ninguno')\n].join('\\n');\n\nif (aviso) mensaje = mensaje + '\\n\\nNota sobre el periodo: ' + aviso;\n\nreturn [{\n  json: {\n    mensaje: mensaje,\n    origen: origen,\n    aviso_periodo: aviso,\n    prompt_ia: prompt_ia,\n    cifras_validas: cifras,\n    nombres_validos: Array.from(new Set(\n      topSinCubrir.map(e => e[0]).concat(topCarga.map(e => e[0])).concat(sinActividad)\n    )),\n    reporte_row: {\n      id_reporte: 'REP-' + String(cfg.ahora_iso).replace(/[^0-9]/g, '').slice(0, 12),\n      generado_en: cfg.ahora_iso,\n      periodo_desde: desde,\n      periodo_hasta: hasta,\n      origen: origen,\n      total_solicitudes: total,\n      asignadas: asignadas,\n      confirmadas: confirmadas,\n      finalizadas: finalizadas,\n      canceladas: canceladas,\n      sin_disponibilidad: sinCobertura,\n      cobertura_pct: cobertura,\n      detalle: ('origen ' + origen + (aviso ? ' (' + aviso + ')' : '') + ' | ' +\n                topSinCubrir.map(e => e[1] + 'x ' + e[0]).join(' | ')).slice(0, 400)\n    }\n  }\n}];\n"
+      },
+      "id": "18fd8e39-456d-488a-82af-522560c50740",
+      "name": "Calcular indicadores",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        224
+      ],
+      "notes": "Cada indicador se puede reconstruir filtrando TUTORIAS por estado y fecha_solicitud."
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt_ia }}"
+      },
+      "id": "c4a6214d-90ba-420e-9ecd-fc80e489f9fd",
+      "name": "Redactar analisis con Gemini",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        848,
+        192
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "notes": "Redacta sobre cifras YA calculadas. Si falla, el reporte se envia igual sin el analisis."
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {
+          "maxOutputTokens": 512,
+          "temperature": 0.2
+        }
+      },
+      "id": "e78704fc-d913-4181-bc09-cfefd35e0e46",
+      "name": "Modelo Gemini (analista)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        896,
+        384
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "1JhrtR2ID18aWoAa",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      },
+      "notes": "Credencial: Google Gemini(PaLM) Api. Temperatura 0 = misma entrada, misma salida."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// TutorBot · Verificar el analisis redactado por la IA\n// El modelo redacta sobre cifras ya calculadas. Este nodo comprueba que\n// NO haya introducido numeros que el sistema no calculo. Si lo hizo, el\n// texto se descarta entero y se envia solo el reporte determinista.\n//\n//  IA-10 toda cifra citada por el modelo debe existir en la lista blanca\n//  IA-11 el reporte se envia igual aunque la IA falle (degradacion elegante)\n// ============================================================\nconst rep = $('Calcular indicadores').first().json;\nconst entrada = $input.first().json || {};\n\nlet texto = entrada.text;\nif (texto == null) texto = entrada.output;\nif (texto == null) texto = entrada.response;\nif (texto && typeof texto === 'object') texto = JSON.stringify(texto);\ntexto = String(texto == null ? '' : texto).replace(/```[a-z]*/gi, '').trim();\n\nconst permitidas = new Set((rep.cifras_validas || []).map(Number));\n// Los porcentajes con un decimal (72.7) y los numeros sueltos del texto\nconst encontrados = (texto.match(/\\d+(?:[.,]\\d+)?/g) || [])\n  .map(s => Number(String(s).replace(',', '.')))\n  .filter(v => !isNaN(v));\n\n// Las cifras de las fechas del periodo son legitimas (2026, 09, 01...)\nconst delPeriodo = new Set(\n  String(rep.reporte_row.periodo_desde + '-' + rep.reporte_row.periodo_hasta)\n    .split('-').map(Number).filter(v => !isNaN(v))\n);\n\nconst inventadas = encontrados.filter(v => !permitidas.has(v) && !delPeriodo.has(v));\n\nlet estado = 'aceptado';\nif (!texto)                       estado = 'descartado_sin_respuesta';\nelse if (texto.length > 1200)     estado = 'descartado_demasiado_largo';\nelse if (inventadas.length)       estado = 'descartado_cifra_inventada';\n\nconst mensaje = estado === 'aceptado'\n  ? rep.mensaje + '\\n\\n--- LECTURA DE LA IA ---\\n' + texto +\n    '\\n(Texto redactado por Gemini sobre las cifras de arriba. Cifras verificadas contra la hoja.)'\n  : rep.mensaje + '\\n\\n(El analisis automatico no se incluyo: ' + estado.replace('descartado_', '') + '.)';\n\nreturn [{\n  json: {\n    mensaje: mensaje,\n    reporte_row: Object.assign({}, rep.reporte_row, {\n      detalle: String(rep.reporte_row.detalle || '').slice(0, 340) + ' | IA:' + estado\n    }),\n    ia_estado: estado,\n    ia_cifras_inventadas: inventadas,\n    ia_texto: texto.slice(0, 1200)\n  }\n}];\n"
+      },
+      "id": "5dc240b8-c028-420c-9f54-57374b866833",
+      "name": "Verificar cifras del analisis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        144
+      ],
+      "notes": "Si el texto de la IA contiene un numero que el sistema no calculo, se descarta el texto completo."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Config').first().json.EMAIL_COORDINACION }}",
+        "subject": "=TutorBot · Reporte de asesorias {{ $json.reporte_row.periodo_desde }} a {{ $json.reporte_row.periodo_hasta }}",
+        "emailType": "text",
+        "message": "={{ $json.mensaje }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "529b7f08-c39d-4a0c-876e-3420e740b1f3",
+      "name": "Enviar reporte por correo",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1344,
+        144
+      ],
+      "webhookId": "88104676-c2d7-4001-9e66-135c6f7e9c24",
+      "notes": "Credencial: Gmail OAuth2 (distinta de la de Google Sheets: usa otros permisos). El destinatario se cambia en el nodo Config, no aqui."
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.SHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "REPORTES",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id_reporte": "={{ $('Verificar cifras del analisis').first().json.reporte_row.id_reporte ?? '' }}",
+            "generado_en": "={{ $('Verificar cifras del analisis').first().json.reporte_row.generado_en ?? '' }}",
+            "periodo_desde": "={{ $('Verificar cifras del analisis').first().json.reporte_row.periodo_desde ?? '' }}",
+            "periodo_hasta": "={{ $('Verificar cifras del analisis').first().json.reporte_row.periodo_hasta ?? '' }}",
+            "total_solicitudes": "={{ $('Verificar cifras del analisis').first().json.reporte_row.total_solicitudes ?? '' }}",
+            "asignadas": "={{ $('Verificar cifras del analisis').first().json.reporte_row.asignadas ?? '' }}",
+            "confirmadas": "={{ $('Verificar cifras del analisis').first().json.reporte_row.confirmadas ?? '' }}",
+            "finalizadas": "={{ $('Verificar cifras del analisis').first().json.reporte_row.finalizadas ?? '' }}",
+            "canceladas": "={{ $('Verificar cifras del analisis').first().json.reporte_row.canceladas ?? '' }}",
+            "sin_disponibilidad": "={{ $('Verificar cifras del analisis').first().json.reporte_row.sin_disponibilidad ?? '' }}",
+            "cobertura_pct": "={{ $('Verificar cifras del analisis').first().json.reporte_row.cobertura_pct ?? '' }}",
+            "detalle": "={{ $('Verificar cifras del analisis').first().json.reporte_row.detalle ?? '' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "id_reporte",
+              "displayName": "id_reporte",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "generado_en",
+              "displayName": "generado_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "periodo_desde",
+              "displayName": "periodo_desde",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "periodo_hasta",
+              "displayName": "periodo_hasta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "total_solicitudes",
+              "displayName": "total_solicitudes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "asignadas",
+              "displayName": "asignadas",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "confirmadas",
+              "displayName": "confirmadas",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "finalizadas",
+              "displayName": "finalizadas",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "canceladas",
+              "displayName": "canceladas",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "sin_disponibilidad",
+              "displayName": "sin_disponibilidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "cobertura_pct",
+              "displayName": "cobertura_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "detalle",
+              "displayName": "detalle",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "id": "2714ea02-7deb-4b22-9a22-da0fe8988b1e",
+      "name": "Archivar en REPORTES",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1568,
+        144
+      ],
+      "notes": "Guarda el historico para comparar semanas y demostrar evolucion."
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "a148aae7-77dc-47e5-b697-a690dba3d0e0",
+                    "leftValue": "={{ $('Calcular indicadores').first().json.origen }}",
+                    "rightValue": "formulario",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "formulario"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c607b88c-4a27-4e8d-b1d5-e27f776f0e32",
+                    "leftValue": "={{ $('Calcular indicadores').first().json.origen }}",
+                    "rightValue": "webhook",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "webhook"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "programado"
+        }
+      },
+      "id": "a6d4d20c-e8e6-4ab1-84fd-2e9bd17096d3",
+      "name": "Tipo de solicitud",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1776,
+        144
+      ],
+      "notes": "Cada disparador necesita una salida distinta: pagina de confirmacion, respuesta JSON, o nada mas que el correo cuando fue el reloj."
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "Reporte generado",
+        "completionMessage": "=Periodo {{ $('Calcular indicadores').first().json.reporte_row.periodo_desde }} a {{ $('Calcular indicadores').first().json.reporte_row.periodo_hasta }}: {{ $('Calcular indicadores').first().json.reporte_row.total_solicitudes }} solicitudes, cobertura {{ $('Calcular indicadores').first().json.reporte_row.cobertura_pct }}%. El detalle se envio por correo a la coordinacion.",
+        "options": {}
+      },
+      "id": "dc27db80-eee3-4ab3-b544-1c497c654f6d",
+      "name": "Confirmar al solicitante",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 1,
+      "position": [
+        2016,
+        -32
+      ],
+      "webhookId": "b3d4d9da-2158-447c-bcea-015f5dfafea1",
+      "onError": "continueRegularOutput",
+      "notes": "Pagina que ve quien envio el formulario. Con el disparador programado no aplica y se ignora."
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify({ ok: true, origen: $('Calcular indicadores').first().json.reporte_row.origen, periodo: { desde: $('Calcular indicadores').first().json.reporte_row.periodo_desde, hasta: $('Calcular indicadores').first().json.reporte_row.periodo_hasta }, aviso: $('Calcular indicadores').first().json.aviso_periodo, indicadores: $('Calcular indicadores').first().json.reporte_row, analisis_ia: $('Verificar cifras del analisis').first().json.ia_estado }) }}",
+        "options": {}
+      },
+      "id": "f9b5a08b-4021-482c-8f42-c4a47b179ac9",
+      "name": "Responder al webhook",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2016,
+        176
+      ],
+      "notes": "Salida estructurada para el webhook (responseMode: lastNode). No se usa Respond to Webhook porque el Form Trigger no lo permite en este workflow."
+    },
+    {
+      "parameters": {},
+      "id": "a25bb9bc-3368-492f-b84f-c90e11c64acc",
+      "name": "Fin programado",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2016,
+        384
+      ],
+      "notes": "El reloj no tiene a quien responder: el reporte ya salio por correo."
+    },
+    {
+      "parameters": {
+        "formTitle": "Reporte de asesorias academicas",
+        "formDescription": "Elige el periodo que quieres analizar. El reporte se envia por correo a la coordinacion.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Desde",
+              "fieldType": "date",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Hasta",
+              "fieldType": "date",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "buttonLabel": "Generar reporte"
+        }
+      },
+      "id": "c83957e6-f3a6-48fe-a2dc-ab4ed3ceebaf",
+      "name": "Solicitud de reporte",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        -192,
+        320
+      ],
+      "webhookId": "b23d9c8a-a573-4a0d-b399-ec4641acbd21",
+      "notes": "Formulario publico de n8n. Las dos fechas se validan otra vez en 'Calcular indicadores': nada que venga del formulario se usa sin verificar."
+    },
+    {
+      "parameters": {
+        "path": "tutorbot-reporte-api",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "c2936ead-7016-4665-a828-dd3fb4169fb9",
+      "name": "Webhook reporte a demanda",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        496
+      ],
+      "webhookId": "2ae8e145-09de-4a08-bd8a-b81a7e1cc2a1",
+      "notes": "API para integrar con otros sistemas: GET /webhook/tutorbot-reporte-api?desde=2026-08-01&hasta=2026-08-31. Sin parametros usa los ultimos 7 dias. Devuelve los indicadores en JSON (responseMode: lastNode -> nodo Responder al webhook)."
+    },
+    {
+      "parameters": {
+        "content": "## REPORTE PARA COORDINACION\nTercer workflow = tercera responsabilidad.\n\nDos disparadores para el mismo proceso: programado (lunes 7:00) y a demanda (webhook).\n\nIndicadores: cobertura de la demanda, estados, carga por tutor y materias sin cubrir.\n\nTres disparadores: reloj (ultimos 7 dias), formulario (periodo elegido a mano) y webhook GET con ?desde=&hasta= para integrar con otros sistemas. Cada uno tiene su propia salida.\n\nLa IA REDACTA el analisis, no lo calcula: toda cifra que cite se verifica contra la lista blanca que produjo 'Calcular indicadores'. Si inventa una, el texto se descarta entero.",
+        "height": 260,
+        "width": 1100,
+        "color": 4
+      },
+      "id": "8b721b5e-9096-4208-8b59-62a4ee8f3221",
+      "name": "Nota b72b",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -224,
+        -176
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Lunes 7:00": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Leer TUTORIAS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer TUTORIAS": {
+      "main": [
+        [
+          {
+            "node": "Leer TUTORES",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer TUTORES": {
+      "main": [
+        [
+          {
+            "node": "Calcular indicadores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular indicadores": {
+      "main": [
+        [
+          {
+            "node": "Redactar analisis con Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redactar analisis con Gemini": {
+      "main": [
+        [
+          {
+            "node": "Verificar cifras del analisis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modelo Gemini (analista)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Redactar analisis con Gemini",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar cifras del analisis": {
+      "main": [
+        [
+          {
+            "node": "Enviar reporte por correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar reporte por correo": {
+      "main": [
+        [
+          {
+            "node": "Archivar en REPORTES",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Archivar en REPORTES": {
+      "main": [
+        [
+          {
+            "node": "Tipo de solicitud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tipo de solicitud": {
+      "main": [
+        [
+          {
+            "node": "Confirmar al solicitante",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder al webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin programado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Solicitud de reporte": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook reporte a demanda": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "5176f929-9ed2-4b36-86e9-fca20c4d6a7a",
+  "meta": {
+    "instanceId": "23a408dad84d2f4fb9cfb75574cd9690916626cd616a3cd6a5b9dc56cb8ffd34"
+  },
+  "nodeGroups": [],
+  "id": "ZnJkfXOY1zChS1ct",
+  "tags": []
+}
